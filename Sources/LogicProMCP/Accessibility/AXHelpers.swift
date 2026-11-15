@@ -85,6 +85,9 @@ enum AXHelpers {
                 return element
             },
             attributeValue: { element, attribute in
+                // Logic 13.0's Browser pane reads as childless (`BrowserPaneOpacity`).
+                if attribute == kAXChildrenAttribute as String,
+                   BrowserPaneOpacity.hidesChildren(of: element) { return [] as CFArray }
                 var value: AnyObject?
                 let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
                 guard result == .success else { return nil }
@@ -105,6 +108,7 @@ enum AXHelpers {
                 AXUIElementSetAttributeValue(element, attribute as CFString, value) == .success
             },
             children: { element in
+                if BrowserPaneOpacity.hidesChildren(of: element) { return [] }
                 var value: AnyObject?
                 let status = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
                 guard status == .success, let value else {
@@ -116,6 +120,7 @@ enum AXHelpers {
                 AXUIElementPerformAction(element, action as CFString) == .success
             },
             childCount: { element in
+                if BrowserPaneOpacity.hidesChildren(of: element) { return 0 }
                 var count: CFIndex = 0
                 let result = AXUIElementGetAttributeValueCount(element, kAXChildrenAttribute as CFString, &count)
                 guard result == .success else { return nil }
@@ -142,6 +147,8 @@ enum AXHelpers {
                 return .success(actions)
             },
             attributeValueResult: { element, attribute in
+                if attribute == kAXChildrenAttribute as String,
+                   BrowserPaneOpacity.hidesChildren(of: element) { return .success([] as CFArray) }
                 var value: AnyObject?
                 let status = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
                 guard status == .success else {
@@ -167,6 +174,12 @@ enum AXHelpers {
                 let status = AXUIElementCopyMultipleAttributeValues(element, attributes as CFArray, [], &values)
                 guard status == .success else { return .failure(AXStatusError(raw: status.rawValue)) }
                 guard let values else { return .failure(AXStatusError(raw: AXError.cannotComplete.rawValue)) }
+                if let index = attributes.firstIndex(of: kAXChildrenAttribute as String),
+                   BrowserPaneOpacity.hidesChildren(of: element) {
+                    var withheld = values as [AnyObject]
+                    if index < withheld.count { withheld[index] = [] as CFArray }
+                    return .success(withheld)
+                }
                 return .success(values as [AnyObject])
             }
         )
@@ -565,6 +578,7 @@ enum AXHelpers {
         if let injected = runtime.childrenResult {
             return injected(element)
         }
+        if BrowserPaneOpacity.hidesChildren(of: element) { return .success([]) }
         var value: AnyObject?
         let status = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
         return projectChildrenStatus(status, value)

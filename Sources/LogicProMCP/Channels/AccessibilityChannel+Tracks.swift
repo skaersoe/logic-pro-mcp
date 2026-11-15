@@ -2818,6 +2818,12 @@ extension AccessibilityChannel {
             return .exhausted
         }
 
+        // Logic 13.0: pressed through the inspector's channel strip before any key is posted
+        // (`inspectorStripRung`).
+        let stripRungs = inspectorStripRungs(
+            buttonName: buttonName, index: index, desired: desired, readValue: readValue,
+            runtime: runtime, processRuntime: processRuntime)
+
         switch buttonName {
         case "Solo":
             let keyRung: TrackToggleRung = ("keyboard-solo", syntheticKeyRetryPollMs, { poll in
@@ -2825,14 +2831,14 @@ extension AccessibilityChannel {
                     _ = keyRuntime.postKeyEvent(trackSoloKeyCode)
                 }
             })
-            return [pressRung, keyRung]
+            return [pressRung] + stripRungs + [keyRung]
         case "Mute":
             let keyRung: TrackToggleRung = ("keyboard-mute", syntheticKeyRetryPollMs, { poll in
                 retryingKeyOutcome(pollMatched: poll) {
                     _ = keyRuntime.postKeyEvent(trackMuteKeyCode)
                 }
             })
-            return [pressRung, keyRung]
+            return [pressRung] + stripRungs + [keyRung]
         case "Record":
             let keyRung: TrackToggleRung = ("keyboard-arm", syntheticKeyRetryPollMs, { poll in
                 // #7 configurable chord — a present-but-invalid override is a
@@ -2866,7 +2872,7 @@ extension AccessibilityChannel {
                     _ = keyRuntime.postFlaggedKeyEvent(code, flags)
                 }
             })
-            return [pressRung, keyRung]
+            return [pressRung] + stripRungs + [keyRung]
         default:
             return [pressRung]
         }

@@ -98,7 +98,7 @@ enum ControlBarDisplayMode {
         }
         let windowTitle = AXHelpers.getTitle(window, runtime: runtime)
         let observation: MenuObservation
-        switch openMenu(in: popup, runtime: runtime) {
+        switch openMenu(in: popup, window: window, runtime: runtime) {
         case .observed(let observed):
             observation = observed
         case .unavailable:
@@ -153,8 +153,8 @@ enum ControlBarDisplayMode {
             beats[0].element, kAXPressAction as String, runtime: runtime)
         let now = waitForMode(of: popup, runtime: runtime, until: isBeats)
         let changed = now.map(isBeats) == true
-        var menuClosed = waitForMenuClosure(under: popup, runtime: runtime)
-        if !menuClosed { menuClosed = cancel(observation.menu, under: popup, runtime: runtime) }
+        var menuClosed = waitForMenuClosure(under: popup, in: window, runtime: runtime)
+        if !menuClosed { menuClosed = cancel(observation.menu, under: popup, in: window, runtime: runtime) }
         guard menuClosed else {
             return .unsettled(lease, "display_mode_menu_not_closed")
         }
@@ -180,7 +180,7 @@ enum ControlBarDisplayMode {
         runtime: AXHelpers.Runtime, currentOwner: (() -> (AXUIElement, AXUIElement?)?)?,
         settledReason: String
     ) -> Switch {
-        guard cancel(observation.menu, under: popup, runtime: runtime) else {
+        guard cancel(observation.menu, under: popup, in: window, runtime: runtime) else {
             return .unsettled(lease, "display_mode_menu_not_closed")
         }
         if let refusal = leaseRefusal(
@@ -203,7 +203,7 @@ enum ControlBarDisplayMode {
             return .refused(refusal)
         }
         let observation: MenuObservation
-        switch openMenu(in: popup, runtime: runtime) {
+        switch openMenu(in: popup, window: window, runtime: runtime) {
         case .observed(let observed):
             observation = observed
         case .unavailable(let reason), .unsettled(let reason):
@@ -215,11 +215,11 @@ enum ControlBarDisplayMode {
         if let refusal = leaseRefusal(
             lease, window: window, popup: popup, runtime: runtime, currentOwner: currentOwner
         ) {
-            _ = cancel(observation.menu, under: popup, runtime: runtime)
+            _ = cancel(observation.menu, under: popup, in: window, runtime: runtime)
             return .refused(refusal)
         }
         if now == lease.original {
-            guard cancel(observation.menu, under: popup, runtime: runtime) else {
+            guard cancel(observation.menu, under: popup, in: window, runtime: runtime) else {
                 return .refused("display_mode_menu_not_closed")
             }
             if let refusal = leaseRefusal(
@@ -232,7 +232,7 @@ enum ControlBarDisplayMode {
         // Only the checked mode this switch set is ours to undo; AXValue can still report Beats
         // after a later user selection and therefore is not cleanup authority.
         guard isBeats(now) else {
-            guard cancel(observation.menu, under: popup, runtime: runtime) else {
+            guard cancel(observation.menu, under: popup, in: window, runtime: runtime) else {
                 return .refused("display_mode_menu_not_closed")
             }
             if let refusal = leaseRefusal(
@@ -247,13 +247,13 @@ enum ControlBarDisplayMode {
               leaseRefusal(
                   lease, window: window, popup: popup, runtime: runtime, currentOwner: currentOwner
               ) == nil else {
-            guard cancel(observation.menu, under: popup, runtime: runtime) else {
+            guard cancel(observation.menu, under: popup, in: window, runtime: runtime) else {
                 return .refused("display_mode_menu_not_closed")
             }
             return .refused("display_mode_not_restored")
         }
         guard actionAvailable(kAXPressAction as String, on: originals[0].element, runtime: runtime) else {
-            guard cancel(observation.menu, under: popup, runtime: runtime) else {
+            guard cancel(observation.menu, under: popup, in: window, runtime: runtime) else {
                 return .refused("display_mode_menu_not_closed")
             }
             if let refusal = leaseRefusal(
@@ -267,8 +267,8 @@ enum ControlBarDisplayMode {
         // This read is only a settling aid. AXValue can already be stale at the desired value, so
         // it is never sufficient restoration evidence by itself.
         _ = waitForMode(of: popup, runtime: runtime, until: { $0 == lease.original })
-        var menuClosed = waitForMenuClosure(under: popup, runtime: runtime)
-        if !menuClosed { menuClosed = cancel(observation.menu, under: popup, runtime: runtime) }
+        var menuClosed = waitForMenuClosure(under: popup, in: window, runtime: runtime)
+        if !menuClosed { menuClosed = cancel(observation.menu, under: popup, in: window, runtime: runtime) }
         guard menuClosed else {
             return .refused("display_mode_menu_not_closed")
         }
@@ -288,7 +288,7 @@ enum ControlBarDisplayMode {
         currentOwner: (() -> (AXUIElement, AXUIElement?)?)?
     ) -> Restore {
         let observation: MenuObservation
-        switch openMenu(in: popup, runtime: runtime) {
+        switch openMenu(in: popup, window: window, runtime: runtime) {
         case .observed(let observed):
             observation = observed
         case .unavailable(let reason), .unsettled(let reason):
@@ -300,7 +300,7 @@ enum ControlBarDisplayMode {
             return .refused(reason)
         }
         let restored = observation.selectedTitle == lease.original
-        guard cancel(observation.menu, under: popup, runtime: runtime) else {
+        guard cancel(observation.menu, under: popup, in: window, runtime: runtime) else {
             return .refused("display_mode_menu_not_closed")
         }
         if let refusal = leaseRefusal(
@@ -409,47 +409,55 @@ enum ControlBarDisplayMode {
 
     /// The popup's AXMenu child, which appears after AXShowMenu returns, or nil at the deadline.
     /// See `menuAppearanceTimeout`.
-    private static func waitForMenu(under popup: AXUIElement, runtime: AXHelpers.Runtime) -> AXUIElement? {
+    private static func waitForMenu(
+        under popup: AXUIElement, in window: AXUIElement, runtime: AXHelpers.Runtime
+    ) -> AXUIElement? {
         let deadline = Date().addingTimeInterval(menuAppearanceTimeout)
         repeat {
-            if let menu = currentMenu(under: popup, runtime: runtime) { return menu }
+            if let menu = currentMenu(under: popup, in: window, runtime: runtime) { return menu }
             let remaining = deadline.timeIntervalSinceNow
             guard remaining > 0 else { break }
             Thread.sleep(forTimeInterval: min(menuAppearancePollInterval, remaining))
         } while Date() < deadline
-        return currentMenu(under: popup, runtime: runtime)
+        return currentMenu(under: popup, in: window, runtime: runtime)
     }
 
-    private static func currentMenu(under popup: AXUIElement, runtime: AXHelpers.Runtime) -> AXUIElement? {
-        guard let menus = observedMenus(under: popup, runtime: runtime), menus.count == 1 else { return nil }
+    private static func currentMenu(
+        under popup: AXUIElement, in window: AXUIElement, runtime: AXHelpers.Runtime
+    ) -> AXUIElement? {
+        guard let menus = observedMenus(under: popup, in: window, runtime: runtime), menus.count == 1 else { return nil }
         return menus[0]
     }
 
-    private static func observedMenus(under popup: AXUIElement, runtime: AXHelpers.Runtime) -> [AXUIElement]? {
-        guard case .success(let children) = AXHelpers.childrenResult(popup, runtime: runtime) else { return nil }
-        var menus: [AXUIElement] = []
-        for child in children {
-            let role: Result<String?, AXHelpers.AXStatusError> = AXHelpers.getAttributeResult(
-                child, kAXRoleAttribute as String, runtime: runtime)
-            guard case .success(.some(let value)) = role else { return nil }
-            if value == kAXMenuRole as String { menus.append(child) }
+    /// The menus this popup has open. Logic 12 attaches the menu to the popup; Logic 13.0 attaches
+    /// it to the toolbar item that holds the popup (see `ControlBarMenuHost`). Both places are
+    /// read, so a menu at either one is seen by the baseline, the census and the closure checks.
+    private static func observedMenus(
+        under popup: AXUIElement, in window: AXUIElement, runtime: AXHelpers.Runtime
+    ) -> [AXUIElement]? {
+        guard let parents = ControlBarMenuHost.menuParents(of: popup, in: window, runtime: runtime) else {
+            return nil
         }
-        return menus
+        return ControlBarMenuHost.menus(under: parents, runtime: runtime)
     }
 
-    private static func menuIsClosed(under popup: AXUIElement, runtime: AXHelpers.Runtime) -> Bool {
-        observedMenus(under: popup, runtime: runtime)?.isEmpty == true
+    private static func menuIsClosed(
+        under popup: AXUIElement, in window: AXUIElement, runtime: AXHelpers.Runtime
+    ) -> Bool {
+        observedMenus(under: popup, in: window, runtime: runtime)?.isEmpty == true
     }
 
-    private static func waitForMenuClosure(under popup: AXUIElement, runtime: AXHelpers.Runtime) -> Bool {
+    private static func waitForMenuClosure(
+        under popup: AXUIElement, in window: AXUIElement, runtime: AXHelpers.Runtime
+    ) -> Bool {
         let deadline = Date().addingTimeInterval(modeConfirmationTimeout)
         repeat {
-            if menuIsClosed(under: popup, runtime: runtime) { return true }
+            if menuIsClosed(under: popup, in: window, runtime: runtime) { return true }
             let remaining = deadline.timeIntervalSinceNow
             guard remaining > 0 else { break }
             Thread.sleep(forTimeInterval: min(modeConfirmationPollInterval, remaining))
         } while Date() < deadline
-        return menuIsClosed(under: popup, runtime: runtime)
+        return menuIsClosed(under: popup, in: window, runtime: runtime)
     }
 
     /// `.exact` compares the whole trimmed title, so `Beats & Project` is not Beats.
@@ -481,8 +489,10 @@ enum ControlBarDisplayMode {
 
     /// Opens the popup and proves the complete bounded menu before returning any write authority.
     /// An unreadable role/title/enabled/checkmark or subtree cancels the owned menu and refuses.
-    private static func openMenu(in popup: AXUIElement, runtime: AXHelpers.Runtime) -> MenuAcquisition {
-        guard let baseline = observedMenus(under: popup, runtime: runtime) else {
+    private static func openMenu(
+        in popup: AXUIElement, window: AXUIElement, runtime: AXHelpers.Runtime
+    ) -> MenuAcquisition {
+        guard let baseline = observedMenus(under: popup, in: window, runtime: runtime) else {
             return .unsettled("display_mode_menu_baseline_unreadable")
         }
         // Never adopt or dismiss a menu that was not opened by this call.
@@ -490,8 +500,8 @@ enum ControlBarDisplayMode {
             return .unsettled("display_mode_menu_already_open")
         }
         let acknowledged = AXHelpers.performAction(popup, kAXShowMenuAction as String, runtime: runtime)
-        guard let menu = waitForMenu(under: popup, runtime: runtime) else {
-            guard let after = observedMenus(under: popup, runtime: runtime) else {
+        guard let menu = waitForMenu(under: popup, in: window, runtime: runtime) else {
+            guard let after = observedMenus(under: popup, in: window, runtime: runtime) else {
                 return .unsettled("display_mode_menu_state_unverified")
             }
             return after.isEmpty
@@ -499,7 +509,7 @@ enum ControlBarDisplayMode {
                 : .unsettled("display_mode_menu_state_unverified")
         }
         guard acknowledged else {
-            return cancel(menu, under: popup, runtime: runtime)
+            return cancel(menu, under: popup, in: window, runtime: runtime)
                 ? .unavailable("display_mode_menu_not_opened")
                 : .unsettled("display_mode_menu_not_closed")
         }
@@ -510,7 +520,7 @@ enum ControlBarDisplayMode {
         ) {
         case .success(let observed): census = observed
         case .failure:
-            return cancel(menu, under: popup, runtime: runtime)
+            return cancel(menu, under: popup, in: window, runtime: runtime)
                 ? .unavailable("display_mode_menu_unreadable")
                 : .unsettled("display_mode_menu_not_closed")
         }
@@ -524,7 +534,7 @@ enum ControlBarDisplayMode {
                 element, "AXMenuItemMarkChar", runtime: runtime)
             guard case .success(let rawTitle) = titleRead, let title = rawTitle as? String,
                   case .success(let rawEnabled) = enabledRead, let enabled = rawEnabled as? Bool else {
-                return cancel(menu, under: popup, runtime: runtime)
+                return cancel(menu, under: popup, in: window, runtime: runtime)
                     ? .unavailable("display_mode_menu_unreadable")
                     : .unsettled("display_mode_menu_not_closed")
             }
@@ -533,7 +543,7 @@ enum ControlBarDisplayMode {
             case .success(nil): checked = false
             case .success(let raw?):
                 guard let mark = raw as? String else {
-                    return cancel(menu, under: popup, runtime: runtime)
+                    return cancel(menu, under: popup, in: window, runtime: runtime)
                         ? .unavailable("display_mode_menu_unreadable")
                         : .unsettled("display_mode_menu_not_closed")
                 }
@@ -541,7 +551,7 @@ enum ControlBarDisplayMode {
             case .failure(let error) where error.isDefinitiveAbsence:
                 checked = false
             case .failure:
-                return cancel(menu, under: popup, runtime: runtime)
+                return cancel(menu, under: popup, in: window, runtime: runtime)
                     ? .unavailable("display_mode_menu_unreadable")
                     : .unsettled("display_mode_menu_not_closed")
             }
@@ -549,7 +559,7 @@ enum ControlBarDisplayMode {
         }
         let selected = items.filter(\.checked)
         guard selected.count == 1 else {
-            return cancel(menu, under: popup, runtime: runtime)
+            return cancel(menu, under: popup, in: window, runtime: runtime)
                 ? .unavailable("display_mode_menu_selection_unreadable")
                 : .unsettled("display_mode_menu_not_closed")
         }
@@ -563,14 +573,16 @@ enum ControlBarDisplayMode {
         return actions.contains(action)
     }
 
-    private static func cancel(_ menu: AXUIElement, under popup: AXUIElement, runtime: AXHelpers.Runtime) -> Bool {
+    private static func cancel(
+        _ menu: AXUIElement, under popup: AXUIElement, in window: AXUIElement, runtime: AXHelpers.Runtime
+    ) -> Bool {
         guard actionAvailable(kAXCancelAction as String, on: menu, runtime: runtime),
               AXHelpers.performAction(menu, kAXCancelAction as String, runtime: runtime) else { return false }
-        if waitForMenuClosure(under: popup, runtime: runtime) { return true }
-        guard let checkedItem = checkedCloseItem(in: menu, under: popup, runtime: runtime),
+        if waitForMenuClosure(under: popup, in: window, runtime: runtime) { return true }
+        guard let checkedItem = checkedCloseItem(in: menu, under: popup, in: window, runtime: runtime),
               actionAvailable(kAXPressAction as String, on: checkedItem, runtime: runtime),
               AXHelpers.performAction(checkedItem, kAXPressAction as String, runtime: runtime),
-              waitForMenuClosure(under: popup, runtime: runtime) else { return false }
+              waitForMenuClosure(under: popup, in: window, runtime: runtime) else { return false }
         Log.info("display_mode_menu_close_method=checked_item_reselection", subsystem: "ax")
         return true
     }
@@ -579,9 +591,9 @@ enum ControlBarDisplayMode {
     /// verified non-closure may the already-selected item be reselected as the bounded inverse.
     /// A fresh, complete census keeps this from becoming an arbitrary or repeated menu press.
     private static func checkedCloseItem(
-        in menu: AXUIElement, under popup: AXUIElement, runtime: AXHelpers.Runtime
+        in menu: AXUIElement, under popup: AXUIElement, in window: AXUIElement, runtime: AXHelpers.Runtime
     ) -> AXUIElement? {
-        guard let menus = observedMenus(under: popup, runtime: runtime), menus.count == 1,
+        guard let menus = observedMenus(under: popup, in: window, runtime: runtime), menus.count == 1,
               CFEqual(menus[0], menu) else { return nil }
         let census: AXHelpers.Census
         switch AXHelpers.censusDescendantResult(

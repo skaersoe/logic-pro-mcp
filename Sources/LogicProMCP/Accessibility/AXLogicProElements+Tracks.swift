@@ -535,7 +535,16 @@ extension AXLogicProElements {
             guard permitted() else { return false }
             willWrite?()
             if AXHelpers.setAttribute(headersGroup, kAXSelectedChildrenAttribute, arr, runtime: runtime.ax) {
-                return true
+                // Logic 13.0 acknowledges this write and leaves the selection where it was.
+                switch TrackHeaderContextMenuSelection.selectIfWriteWasIgnored(
+                    target: header, headers: allTrackHeaders(runtime: runtime), container: headersGroup,
+                    runtime: runtime.ax, permitted: permitted, willWrite: { willWrite?() }
+                ) {
+                case .notApplicable, .selected: return true
+                case .failed(let reason):
+                    Log.info("track_select_context_menu_failed reason=\(reason)", subsystem: "ax")
+                    return false
+                }
             }
         }
 

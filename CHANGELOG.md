@@ -8,7 +8,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
-- No caller-facing changes have landed after the v3.19.0 source candidate.
+Fork-local (`skaersoe/logic-pro-mcp`, branch `logic-13-compat`). Measured 2026-11-15 on Logic Pro
+13.0 (7801), en-US, macOS 27.0.1. Other interface languages and Logic versions between 12.3 and
+13.0 are not measured.
+
+### Fixed
+- **`record_sequence` no longer refuses on Logic 13.0 with `display_mode_beats_item_not_pressed`.**
+  Logic 13.0 attaches the control bar's Display Mode menu to the toolbar item that holds the popup,
+  not to the popup. The menu is now looked for at both places. Logic 12 behaviour is unchanged.
+- **Track selection works on Logic 13.0.** Logic 13.0 acknowledges the `AXSelectedChildren` write
+  and leaves the selection unchanged, so `select`, `rename` and every operation that selects a
+  track refused with `selection_not_exclusive`. When the write is observed to have no effect, the
+  track header's context menu is opened and cancelled, which selects that header alone. Nothing in
+  the menu is pressed. A header inside a multiple selection is reached through a header outside it.
+- **Operations no longer time out while Logic 13.0's Browser pane is open.** The pane exposes
+  about 33,000 accessibility elements; window-rooted searches ran past the 25 s deadline. The
+  production runtime now reads the pane as an element without children. The pane is recognised by
+  its en-US description only. `LOGIC_MCP_BROWSER_PANE_OPAQUE=0` turns this off.
+- **`mute` and `solo` no longer depend on Logic being frontmost on Logic 13.** After the header
+  press, the button on the inspector's channel strip is pressed once the target is the sole
+  selection and the strip carries its name. The key-command rung remains after it. `arm` gains
+  nothing on instrument tracks, whose inspector strip has no record button.
+
+### Known gaps on Logic 13.0
+- `set_instrument` answers `library_panel_unavailable`: Logic 13.0 replaced the Library panel.
+- `create_marker` creates the marker without applying the name and leaves the Marker List open.
+- `get_regions` returned no regions with two MIDI regions visible.
 
 ---
 
