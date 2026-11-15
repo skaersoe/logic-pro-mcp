@@ -84,6 +84,22 @@ def find_staged_artifact(staging_dir: str, staged_name: str, min_mtime: float) -
     return scored[0][1] if scored else None
 
 
+def spotlight_directories(staged_name: str) -> list[str]:
+    """Folders in which Spotlight reports a file whose name contains this run's unique name."""
+    import subprocess
+    try:
+        out = subprocess.run(["/usr/bin/mdfind", "-name", staged_name], capture_output=True,
+                             text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    directories: list[str] = []
+    for line in out.splitlines():
+        directory = os.path.realpath(os.path.dirname(line.strip()))
+        if line.strip() and directory not in directories:
+            directories.append(directory)
+    return directories
+
+
 def bounce_artifact_locations(staging_dir: str, output_dir: str) -> list[str]:
     home_dir = os.path.expanduser("~")
     candidates = [staging_dir]
@@ -199,8 +215,13 @@ def main() -> int:
         result["success"] = False
         result["error"] = "bounce_confirm_button_not_found"
         print(json.dumps(result)); return 1
+    # The panel took longer than 2.5 s on Logic Pro 13.0 (2026-11-15); poll for it.
+    panel_deadline = time.monotonic() + 10.0
     time.sleep(2.5)
     result["save_panel_present"] = save_panel_present()
+    while not result["save_panel_present"] and time.monotonic() < panel_deadline:
+        time.sleep(0.5)
+        result["save_panel_present"] = save_panel_present()
     if not result["save_panel_present"]:
         result["success"] = False
         result["error"] = "bounce_save_panel_did_not_appear"
@@ -247,7 +268,14 @@ def main() -> int:
 
     # 6. Legacy staging-Favorite click. Its row varies by host, so this click
     # does not establish the destination; recovery below observes the actual file.
-    downloads = (ox + 86, oy + 184)
+    # LOGIC_BOUNCE_SIDEBAR_Y moves the click to the host's own staging row. On 2026-11-15
+    # (Logic Pro 13.0, macOS 27.0.1) the default row was an unrelated Favorite, the bounce
+    # was written there, and the recovery below did not look in it.
+    try:
+        sidebar_y = int(os.environ.get("LOGIC_BOUNCE_SIDEBAR_Y", "184"))
+    except ValueError:
+        sidebar_y = 184
+    downloads = (ox + 86, oy + sidebar_y)
     if not send_ui_events(f"c:{downloads[0]},{downloads[1]}"):
         result["success"] = False
         result["error"] = "save_panel_staging_sidebar_click_failed"
@@ -285,6 +313,14 @@ def main() -> int:
         observed_project = bounce_project_identity()
         candidates = [path for directory in locations
                       if (path := find_staged_artifact(directory, staged_name, bounce_started_at)) is not None]
+        if not candidates:
+            # The sidebar click can land on any Favorite. Ask Spotlight for this run's unique
+            # name and search the folder it reports, with the same exact-name, fresh-file rule.
+            for directory in spotlight_directories(staged_name):
+                if directory not in locations:
+                    found = find_staged_artifact(directory, staged_name, bounce_started_at)
+                    if found is not None:
+                        candidates.append(found)
         if len(candidates) > 1:
             result["success"] = False
             result["error"] = "ambiguous_bounce_artifacts"

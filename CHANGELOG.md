@@ -35,6 +35,14 @@ Fork-local (`skaersoe/logic-pro-mcp`, branch `logic-13-compat`). Measured 2026-1
   `verify_partial_restore`. One previously selected header is now reselected through its context
   menu. An empty or multiple prior selection still cannot be restored on Logic 13.0.
 
+- **The bounce helper no longer loses its file to a Favorite it did not mean to click.**
+  `Scripts/logic_bounce.py` chose the folder by clicking a fixed sidebar row; on the measured host
+  that row was an unrelated folder, Logic wrote the bounce there, and the helper answered
+  `artifact_not_found_within_helper_budget`. `LOGIC_BOUNCE_SIDEBAR_Y` sets the row offset for the
+  host, the save-panel check polls for up to 10 s, and the recovery also asks Spotlight for the
+  run's unique name. Typing a path into Go to Folder was tried and does not work: the sheet
+  ignored synthetic keystrokes.
+
 ### Known gaps on Logic 13.0
 - `set_instrument` answers `library_panel_unavailable`: Logic 13.0 replaced the Library panel.
 - `create_marker` creates the marker without applying the name and leaves the Marker List open.
