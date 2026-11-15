@@ -30,6 +30,11 @@ Fork-local (`skaersoe/logic-pro-mcp`, branch `logic-13-compat`). Measured 2026-1
   selection and the strip carries its name. The key-command rung remains after it. `arm` gains
   nothing on instrument tracks, whose inspector strip has no record button.
 
+- **`setup_arm_key` completes on Logic 13.0 when one track was selected before it ran.** Its
+  verification restored the prior selection with the ignored write and refused with
+  `verify_partial_restore`. One previously selected header is now reselected through its context
+  menu. An empty or multiple prior selection still cannot be restored on Logic 13.0.
+
 ### Known gaps on Logic 13.0
 - `set_instrument` answers `library_panel_unavailable`: Logic 13.0 replaced the Library panel.
 - `create_marker` creates the marker without applying the name and leaves the Marker List open.

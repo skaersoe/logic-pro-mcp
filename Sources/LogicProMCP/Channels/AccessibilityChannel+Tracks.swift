@@ -2643,6 +2643,12 @@ extension AccessibilityChannel {
                 runtime: runtime.ax
             )
         }
+        // Logic 13.0 ignores both writes. One previously selected header can be reselected
+        // through its context menu; an empty or multiple prior selection cannot.
+        if selectedHeaders.count == 1 {
+            _ = TrackHeaderContextMenuSelection.selectIfWriteWasIgnored(
+                target: selectedHeaders[0], headers: headers, container: trackHeaders, runtime: runtime.ax)
+        }
         for attempt in 0..<4 {
             let observed = headers.map { AXValueExtractors.extractSelectedState($0, runtime: runtime.ax) }
             if observed == priorSelection { return true }
